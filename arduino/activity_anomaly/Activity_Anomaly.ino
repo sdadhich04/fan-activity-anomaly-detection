@@ -38,6 +38,16 @@ int output_zero_point;
 // Threshold
 const float kReconstructionErrorThreshold = 1.478182464838028;
 
+// The Arduino_BMI270_BMM150 library reports acceleration in g's, but the
+// autoencoder was trained on the mHealth dataset, whose acceleration columns
+// are in m/s^2 (see Dataset-README.txt). Convert on read so live sensor
+// values land in the same units/range the model was calibrated on.
+const float kGravity = 9.80665;
+
+// Target ~50 Hz sampling to match the mHealth dataset's recording rate.
+const unsigned long kSamplePeriodMs = 20;
+unsigned long last_sample_time = 0;
+
 void setup() {
   Serial.begin(115200);
   while (!Serial);
@@ -91,8 +101,21 @@ void setup() {
 void loop() {
   float x, y, z;
 
+  // Sample on a fixed ~50 Hz cadence instead of gating purely on
+  // IMU.accelerationAvailable(), so the window duration matches training.
+  unsigned long now = millis();
+  if (now - last_sample_time < kSamplePeriodMs) {
+    return;
+  }
+  last_sample_time = now;
+
   if (IMU.accelerationAvailable()) {
     IMU.readAcceleration(x, y, z);
+
+    // Convert g -> m/s^2 to match the mHealth training data's units.
+    x *= kGravity;
+    y *= kGravity;
+    z *= kGravity;
 
     window_buffer[sample_index][0] = x;
     window_buffer[sample_index][1] = y;
@@ -147,6 +170,4 @@ void loop() {
       }
     }
   }
-
-  delay(200);  // Approximately 50 Hz sampling
 }

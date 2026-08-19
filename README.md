@@ -15,7 +15,7 @@ Detects abnormal fan operation from onboard IMU vibration signatures. Built from
 3. **Classification (Keras)** — a neural network trained to distinguish fan states
 4. **Anomaly detection (k-means)** — clustering on the feature space flags operating conditions that don't match any known-good cluster, catching failure modes not seen during training
 
-Two firmware builds are included (`v10`, `v11` — successive iterations from the Edge Impulse project).
+Two firmware builds are included (`v10`, `v11`). These are same-day rebuilds of the same Edge Impulse export — the compiled binaries are functionally identical (only the embedded build timestamp differs), not separate model iterations. Either works; `v11` is kept as the more recent build.
 
 ---
 
@@ -24,6 +24,8 @@ Two firmware builds are included (`v10`, `v11` — successive iterations from th
 Trains an autoencoder on the [mHealth dataset](https://doi.org/10.1109/BSN.2014.24) (Subject 6) to reconstruct "normal" activity IMU windows; high reconstruction error at inference time flags anomalous motion.
 
 The mHealth dataset (`data/mHealth_subject6.log`) contains 50 Hz recordings from sensors on the chest, right wrist, and left ankle across 12 activities (standing, walking, running, cycling, etc. — full label list in `Dataset-README.txt`). This is the same dataset used in the companion [ensemble-activity-classifier](https://github.com/sdadhich04/ensemble-activity-classifier) repo (Lab 8), which does supervised classification on the same data rather than anomaly detection.
+
+The training data's acceleration columns are in m/s², while the Arduino's IMU library reports acceleration in g's — `Activity_Anomaly.ino` converts on read (×9.80665) so live inference sees the same units the model was calibrated on. The anomaly threshold (`kReconstructionErrorThreshold`) is set to mean + 2·std of the training set's reconstruction error; see the notebook's threshold-selection cell if you retrain and need to recompute it.
 
 ---
 
@@ -66,7 +68,7 @@ fan_monitoring/v11/flash_mac.command
 bash fan_monitoring/v11/flash_linux.sh
 ```
 
-Use `v11/` (latest iteration) unless you specifically need to compare against `v10/`.
+Both builds are functionally identical (see note above) — `v11/` is used below for convenience.
 
 ### Part 2: Run the notebook (train the autoencoder)
 
@@ -87,10 +89,16 @@ Expects `mHealth_subject6.log` in the same folder as the notebook — copy it in
 
 ## Hardware
 
-- **Arduino Nano 33 BLE Sense** (Nordic nRF52840, 256 KB flash, 64 KB RAM, onboard IMU)
+- **Arduino Nano 33 BLE Sense** (Nordic nRF52840, 1 MB flash, 256 KB RAM, onboard IMU)
 
 ---
 
 ## Authors
 
 Sparsh Dadhich — University of Washington, ECE / Neuroscience
+
+---
+
+## License
+
+MIT — see [LICENSE](LICENSE). This covers the author's own code, notebooks, and documentation in this repo.
