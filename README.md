@@ -1,104 +1,49 @@
-# Fan & Activity Anomaly Detection — Arduino Nano 33 BLE Sense
+# Fan and Activity Anomaly Detection
 
-**EE 446: Tiny Machine Learning for Ultra Low-Power Edge Computing | University of Washington, Spring 2026**
+EE 446 lab work for on-device anomaly detection on an Arduino Nano 33 BLE Sense. The repository contains a prebuilt Edge Impulse fan-monitoring firmware image and source for a separate activity-anomaly detector using TensorFlow Lite for Microcontrollers.
 
-Two anomaly-detection pipelines on the same board: a mechanical fan-monitoring system built in Edge Impulse (spectral analysis + Keras classifier + k-means anomaly scoring), and a human-activity autoencoder that flags unusual motion patterns from IMU data.
+## Fan monitoring firmware
 
----
+The included report describes an Edge Impulse impulse using the Arduino Nano 33 BLE Sense Rev2 onboard accelerometer (`accX`, `accY`, and `accZ`). It uses a 2,000 ms window, 220 ms stride, and 100 Hz sampling rate. Spectral analysis produces 33 features, including RMS, spectral power, peak frequency, and peak height. The classifier has 33 inputs, dense layers of 32 and 16 units, and two outputs: `nominal` and `off`. A 32-cluster k-means anomaly detector is also described for normal-feature distributions.
 
-## Part 1 — Fan monitoring (Edge Impulse)
+`fan_monitoring/v10/` and `fan_monitoring/v11/` contain compiled firmware and platform-specific flash scripts. The Edge Impulse project source, fan mounting method, and raw fan recordings are not included in this checkout.
 
-Detects abnormal fan operation from onboard IMU vibration signatures. Built from Edge Impulse's public [Fan Monitoring example project](https://studio.edgeimpulse.com/public/47996/latest), adapted for time-series vibration data:
+To flash the included fan firmware, connect a compatible Arduino Nano 33 BLE board and run the script for the operating system:
 
-1. **Time-series data** — vibration recordings under normal and faulty fan conditions
-2. **Spectral analysis** — frequency-domain feature extraction from the raw vibration signal
-3. **Classification (Keras)** — a neural network trained to distinguish fan states
-4. **Anomaly detection (k-means)** — clustering on the feature space flags operating conditions that don't match any known-good cluster, catching failure modes not seen during training
-
-Two firmware builds are included (`v10`, `v11`). These are same-day rebuilds of the same Edge Impulse export — the compiled binaries are functionally identical (only the embedded build timestamp differs), not separate model iterations. Either works; `v11` is kept as the more recent build.
-
----
-
-## Part 2 — Human activity anomaly detection (local notebook)
-
-Trains an autoencoder on the [mHealth dataset](https://doi.org/10.1109/BSN.2014.24) (Subject 6) to reconstruct "normal" activity IMU windows; high reconstruction error at inference time flags anomalous motion.
-
-The mHealth dataset (`data/mHealth_subject6.log`) contains 50 Hz recordings from sensors on the chest, right wrist, and left ankle across 12 activities (standing, walking, running, cycling, etc. — full label list in `Dataset-README.txt`). This is the same dataset used in the companion [ensemble-activity-classifier](https://github.com/sdadhich04/ensemble-activity-classifier) repo (Lab 8), which does supervised classification on the same data rather than anomaly detection.
-
-The training data's acceleration columns are in m/s², while the Arduino's IMU library reports acceleration in g's — `Activity_Anomaly.ino` converts on read (×9.80665) so live inference sees the same units the model was calibrated on. The anomaly threshold (`kReconstructionErrorThreshold`) is set to mean + 2·std of the training set's reconstruction error; see the notebook's threshold-selection cell if you retrain and need to recompute it.
-
----
-
-## Repository contents
-
-```
-TinyML_Lab6_Student_TODO.ipynb        ← Notebook: load mHealth data → train autoencoder → export fp32/int8 TFLite
-TinyML-Lab#6.pdf                      ← Lab instructions (both parts)
-EE446_Lab6_Submission_Guidelines.pdf  ← Submission rubric
-Lab6_EE446_Report.pdf                 ← Written report
-Dataset-README.txt                    ← mHealth dataset documentation (columns, activity labels, sensor placement)
-data/
-  mHealth_subject6.log                ← Raw IMU + ECG log, Subject 6 (18 MB)
-models/
-  autoencoder_fp32.tflite             ← Float32 autoencoder
-  autoencoder_int8.tflite             ← Int8 quantized autoencoder
-arduino/
-  activity_anomaly/
-    Activity_Anomaly.ino              ← Inference sketch — loads autoencoder_model.cc, flags high reconstruction error
-    autoencoder_model.cc              ← Autoencoder as C array (must stay alongside the .ino to compile)
-fan_monitoring/
-  v10/                                ← Edge Impulse firmware build v10 (.bin + flash scripts)
-  v11/                                ← Edge Impulse firmware build v11 (.bin + flash scripts)
-```
-
----
-
-## Quick start
-
-### Part 1: Flash fan monitoring firmware
-
-```bash
-# Windows
+```powershell
 fan_monitoring\v11\flash_windows.bat
-
-# Mac
-fan_monitoring/v11/flash_mac.command
-
-# Linux
-bash fan_monitoring/v11/flash_linux.sh
 ```
 
-Both builds are functionally identical (see note above) — `v11/` is used below for convenience.
-
-### Part 2: Run the notebook (train the autoencoder)
-
 ```bash
-pip install numpy pandas tensorflow scikit-learn matplotlib
+bash fan_monitoring/v11/flash_linux.sh
+# or
+./fan_monitoring/v11/flash_mac.command
+```
+
+The scripts require `arduino-cli`, locate a connected Nano 33 BLE board, install `arduino:mbed_nano@4.0.2` when needed, and upload the binary from that directory.
+
+## Activity anomaly detector
+
+`TinyML_Lab6_Student_TODO.ipynb` trains an autoencoder on the included mHealth Subject 6 log. It uses left-ankle accelerometer columns, makes overlapping windows of 100 samples by three axes, and trains only the notebook's designated normal activity labels. The model is a 300-input autoencoder with dense layers of 32, 16, and 32 units before a 300-value reconstruction output. The notebook applies quantization-aware training and exports a full-int8 TFLite model.
+
+`arduino/activity_anomaly/Activity_Anomaly.ino` embeds that model from `autoencoder_model.cc`. It reads three-axis acceleration through `Arduino_BMI270_BMM150`, samples on an approximately 50 Hz cadence, converts acceleration from g to m/s², quantizes each 100-sample window, and prints `Normal activity` or `Anomaly detected` from mean reconstruction error. The deployed threshold is `1.478182464838028`.
+
+To rerun training, place the data file where the notebook expects it, then open the notebook:
+
+```powershell
+Copy-Item data\mHealth_subject6.log .\mHealth_subject6.log
 jupyter notebook TinyML_Lab6_Student_TODO.ipynb
 ```
 
-Expects `mHealth_subject6.log` in the same folder as the notebook — copy it in from `data/` or point the notebook's path there.
+The notebook's first cell installs missing Python packages in its active kernel. To upload the activity detector, open `arduino/activity_anomaly/Activity_Anomaly.ino` in Arduino IDE with `autoencoder_model.cc` in the same sketch directory. The sketch includes TensorFlow Lite for Microcontrollers and `Arduino_BMI270_BMM150`.
 
-### Part 2: Flash the activity anomaly sketch
+## Hardware and tools
 
-1. Install the `TensorFlowLite` and `Arduino_BMI270_BMM150` (or `Arduino_LSM9DS1`) libraries
-2. Open `arduino/activity_anomaly/Activity_Anomaly.ino` in Arduino IDE — `autoencoder_model.cc` is already alongside it
-3. Upload to Nano 33 BLE Sense, open Serial Monitor to see reconstruction-error-based anomaly flags
+- Arduino Nano 33 BLE Sense Rev2 for the documented fan impulse
+- Arduino Nano 33 BLE Sense-class board and onboard IMU for the activity sketch
+- Edge Impulse firmware export and Arduino CLI for the fan binary
+- TensorFlow, TensorFlow Model Optimization, TensorFlow Lite for Microcontrollers, Arduino IDE, and `Arduino_BMI270_BMM150` for the activity path
 
----
+## Credits
 
-## Hardware
-
-- **Arduino Nano 33 BLE Sense** (Nordic nRF52840, 1 MB flash, 256 KB RAM, onboard IMU)
-
----
-
-## Authors
-
-Sparsh Dadhich — University of Washington, ECE / Neuroscience
-
----
-
-## License
-
-MIT — see [LICENSE](LICENSE). This covers the author's own code, notebooks, and documentation in this repo.
+Lab report author: Sparsh Dadhich. The mHealth dataset documentation credits Oresti Banos, Rafael Garcia, and Alejandro Saez, University of Granada. See `Dataset-README.txt` for the dataset citation and sensor documentation.
